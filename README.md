@@ -76,23 +76,5 @@ NexusTiq24/
 ├── app.py
 ├── requirements.txt
 ├── pytest.ini
-├── .env
+├── .gitignore
 └── README.md
-# Virtual environment
-venv/
-
-# Environment variables and secrets
-.env
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Pytest cache
-.pytest_cache/
-
-# macOS
-.DS_Store
-
-# IDE
-.vscode/
