@@ -1,6 +1,7 @@
 import os
 import json
-import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
@@ -46,8 +47,13 @@ RULES_FILE = os.path.join(
 
 def load_rules():
     try:
-        with open(RULES_FILE, "r", encoding="utf-8") as file:
+        with open(
+            RULES_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
             return json.load(file)
+
     except Exception as error:
         print("Error loading triage rules:", error)
         return []
@@ -62,12 +68,16 @@ def get_rule_by_id(rule_id):
     """
 
     for rule in TRIAGE_RULES:
+
         if rule.get("rule_id") == rule_id:
             return rule
 
     return {
         "rule_id": rule_id,
-        "condition": "Information is insufficient to safely apply a triage rule",
+        "condition": (
+            "Information is insufficient to safely "
+            "apply a triage rule"
+        ),
         "urgency": "HUMAN_REVIEW",
         "department": "Human Clinical Triage",
         "criteria": [],
@@ -88,6 +98,7 @@ def contains_any(text, phrases):
     text = text.lower()
 
     for phrase in phrases:
+
         if phrase.lower() in text:
             return True
 
@@ -99,9 +110,9 @@ def is_negated(text, phrase):
     Basic negation detection.
 
     Examples:
-        'no difficulty breathing'
-        'do not have difficulty breathing'
-        'without difficulty breathing'
+        no difficulty breathing
+        do not have difficulty breathing
+        without difficulty breathing
     """
 
     text = text.lower()
@@ -112,7 +123,9 @@ def is_negated(text, phrase):
     if index == -1:
         return False
 
-    before = text[max(0, index - 50):index]
+    before = text[
+        max(0, index - 50):index
+    ]
 
     negation_patterns = [
         "no ",
@@ -126,6 +139,7 @@ def is_negated(text, phrase):
     ]
 
     for pattern in negation_patterns:
+
         if pattern in before:
             return True
 
@@ -142,7 +156,10 @@ def symptom_present(text, phrases):
 
         if phrase.lower() in text.lower():
 
-            if not is_negated(text, phrase):
+            if not is_negated(
+                text,
+                phrase
+            ):
                 return True
 
     return False
@@ -154,13 +171,11 @@ def symptom_present(text, phrases):
 
 def get_fallback_questions(patient_text):
     """
-    Used only when Gemini does not provide
+    Used when Gemini does not provide
     usable follow-up questions.
     """
 
     text = patient_text.lower()
-
-    questions = []
 
     # --------------------------------------------------------
     # Chest pain
@@ -176,7 +191,7 @@ def get_fallback_questions(patient_text):
         ]
     ):
 
-        questions = [
+        return [
             {
                 "question": "How long have you had the chest pain?",
                 "type": "text"
@@ -203,8 +218,6 @@ def get_fallback_questions(patient_text):
             }
         ]
 
-        return questions
-
     # --------------------------------------------------------
     # Breathing difficulty
     # --------------------------------------------------------
@@ -220,7 +233,7 @@ def get_fallback_questions(patient_text):
         ]
     ):
 
-        questions = [
+        return [
             {
                 "question": "How severe is the breathing difficulty?",
                 "type": "number"
@@ -239,8 +252,6 @@ def get_fallback_questions(patient_text):
             }
         ]
 
-        return questions
-
     # --------------------------------------------------------
     # Fever
     # --------------------------------------------------------
@@ -254,9 +265,12 @@ def get_fallback_questions(patient_text):
         ]
     ):
 
-        questions = [
+        return [
             {
-                "question": "What is your temperature, if you have measured it?",
+                "question": (
+                    "What is your temperature, "
+                    "if you have measured it?"
+                ),
                 "type": "text"
             },
             {
@@ -273,8 +287,6 @@ def get_fallback_questions(patient_text):
             }
         ]
 
-        return questions
-
     # --------------------------------------------------------
     # Injury
     # --------------------------------------------------------
@@ -289,7 +301,7 @@ def get_fallback_questions(patient_text):
         ]
     ):
 
-        questions = [
+        return [
             {
                 "question": "Is there uncontrolled bleeding?",
                 "type": "yes_no"
@@ -304,8 +316,6 @@ def get_fallback_questions(patient_text):
             }
         ]
 
-        return questions
-
     # --------------------------------------------------------
     # Abdominal pain
     # --------------------------------------------------------
@@ -319,9 +329,12 @@ def get_fallback_questions(patient_text):
         ]
     ):
 
-        questions = [
+        return [
             {
-                "question": "How severe is the abdominal pain on a scale of 1 to 10?",
+                "question": (
+                    "How severe is the abdominal pain "
+                    "on a scale of 1 to 10?"
+                ),
                 "type": "number"
             },
             {
@@ -334,67 +347,12 @@ def get_fallback_questions(patient_text):
             }
         ]
 
-        return questions
-
     return []
 
 
 # ============================================================
-# NORMALIZE FOLLOW-UP QUESTIONS
+# QUESTION TYPE DETECTION
 # ============================================================
-
-def normalize_follow_up_questions(questions):
-    """
-    Convert Gemini questions into a predictable format.
-    """
-
-    normalized = []
-
-    if not isinstance(questions, list):
-        return normalized
-
-    for question in questions:
-
-        if isinstance(question, str):
-
-            text = question.strip()
-
-            if not text:
-                continue
-
-            normalized.append({
-                "question": text,
-                "type": detect_question_type(text)
-            })
-
-            continue
-
-        if isinstance(question, dict):
-
-            text = (
-                question.get("question")
-                or question.get("text")
-                or question.get("prompt")
-                or ""
-            )
-
-            text = str(text).strip()
-
-            if not text:
-                continue
-
-            question_type = (
-                question.get("type")
-                or detect_question_type(text)
-            )
-
-            normalized.append({
-                "question": text,
-                "type": question_type
-            })
-
-    return normalized
-
 
 def detect_question_type(question):
     """
@@ -422,10 +380,72 @@ def detect_question_type(question):
 
 
 # ============================================================
+# NORMALIZE FOLLOW-UP QUESTIONS
+# ============================================================
+
+def normalize_follow_up_questions(questions):
+    """
+    Convert Gemini questions into a predictable format.
+    """
+
+    normalized = []
+
+    if not isinstance(questions, list):
+        return normalized
+
+    for question in questions:
+
+        # Gemini returns string
+        if isinstance(question, str):
+
+            text = question.strip()
+
+            if not text:
+                continue
+
+            normalized.append({
+                "question": text,
+                "type": detect_question_type(text)
+            })
+
+            continue
+
+        # Gemini returns dictionary
+        if isinstance(question, dict):
+
+            text = (
+                question.get("question")
+                or question.get("text")
+                or question.get("prompt")
+                or ""
+            )
+
+            text = str(text).strip()
+
+            if not text:
+                continue
+
+            question_type = (
+                question.get("type")
+                or detect_question_type(text)
+            )
+
+            normalized.append({
+                "question": text,
+                "type": question_type
+            })
+
+    return normalized
+
+
+# ============================================================
 # FILTER ALREADY ANSWERED QUESTIONS
 # ============================================================
 
-def filter_answered_questions(questions, answers):
+def filter_answered_questions(
+    questions,
+    answers
+):
     """
     Remove questions that were already answered.
     """
@@ -466,26 +486,12 @@ def filter_answered_questions(questions, answers):
 
 
 # ============================================================
-# CONVERT FRONTEND ANSWERS
+# NORMALIZE FRONTEND ANSWERS
 # ============================================================
 
 def normalize_answers(raw_answers):
     """
-    Frontend sends:
-
-    [
-        {
-            "question": "...",
-            "answer": "...",
-            "type": "yes_no"
-        }
-    ]
-
-    Convert it into:
-
-    {
-        "question": "answer"
-    }
+    Convert frontend answers into a dictionary.
     """
 
     if isinstance(raw_answers, dict):
@@ -516,18 +522,162 @@ def normalize_answers(raw_answers):
 
 
 # ============================================================
-# API: ANALYZE PATIENT
+# GEMINI EXTRACTION WORKER
 # ============================================================
 
-@app.route("/api/analyze", methods=["POST"])
-def analyze_patient():
+def run_gemini_extraction(patient_text):
+    """
+    Run Gemini patient extraction safely.
+
+    If Gemini is unavailable or quota is exceeded,
+    deterministic triage continues safely.
+    """
+
+    start = time.perf_counter()
 
     try:
 
-        data = request.get_json(silent=True) or {}
+        extracted = extract_patient_info(
+            patient_text
+        )
+
+        if not isinstance(
+            extracted,
+            dict
+        ):
+            extracted = {}
+
+        return {
+            "data": extracted,
+            "status": "available",
+            "error": None
+        }
+
+    except Exception as error:
+
+        error_text = str(error)
+
+        print(
+            "Gemini extraction error:",
+            error_text
+        )
+
+        lower_error = error_text.lower()
+
+        # ----------------------------------------------------
+        # Quota error
+        # ----------------------------------------------------
+
+        if (
+            "quota" in lower_error
+            or "429" in lower_error
+            or "resource exhausted" in lower_error
+        ):
+
+            message = (
+                "Gemini API quota has been reached. "
+                "Rule-based safety triage is still active."
+            )
+
+            return {
+                "data": {},
+                "status": "quota_exceeded",
+                "error": message
+            }
+
+        # ----------------------------------------------------
+        # Other Gemini error
+        # ----------------------------------------------------
+
+        message = (
+            "Gemini AI extraction is temporarily unavailable. "
+            "Rule-based safety triage is still active."
+        )
+
+        return {
+            "data": {},
+            "status": "unavailable",
+            "error": message
+        }
+
+    finally:
+
+        elapsed = (
+            time.perf_counter()
+            - start
+        )
+
+        print(
+            f"[TIMING] Gemini extraction: "
+            f"{elapsed:.2f}s"
+        )
+
+
+# ============================================================
+# SEMANTIC RETRIEVAL WORKER
+# ============================================================
+
+def run_semantic_retrieval(patient_text):
+    """
+    Run semantic rule retrieval safely.
+    """
+
+    start = time.perf_counter()
+
+    try:
+
+        result = retrieve_rules(
+            patient_text,
+            top_k=3
+        )
+
+        return result
+
+    except Exception as error:
+
+        print(
+            "Retrieval error:",
+            error
+        )
+
+        return []
+
+    finally:
+
+        elapsed = (
+            time.perf_counter()
+            - start
+        )
+
+        print(
+            f"[TIMING] Semantic retrieval: "
+            f"{elapsed:.2f}s"
+        )
+
+
+# ============================================================
+# API: ANALYZE PATIENT
+# ============================================================
+
+@app.route(
+    "/api/analyze",
+    methods=["POST"]
+)
+def analyze_patient():
+
+    request_start = time.perf_counter()
+
+    try:
+
+        data = request.get_json(
+            silent=True
+        ) or {}
 
         patient_text = str(
-            data.get("patient_text", "")
+            data.get(
+                "patient_text",
+                ""
+            )
         ).strip()
 
         if not patient_text:
@@ -537,7 +687,7 @@ def analyze_patient():
             }), 400
 
         # ----------------------------------------------------
-        # Convert follow-up answers
+        # Follow-up answers
         # ----------------------------------------------------
 
         raw_answers = data.get(
@@ -550,35 +700,76 @@ def analyze_patient():
         )
 
         # ----------------------------------------------------
-        # Gemini patient extraction
+        # Gemini + Retrieval in parallel
         # ----------------------------------------------------
 
-        try:
+        ai_start = time.perf_counter()
 
-            extracted = extract_patient_info(
+        with ThreadPoolExecutor(
+            max_workers=2
+        ) as executor:
+
+            gemini_future = executor.submit(
+                run_gemini_extraction,
                 patient_text
             )
 
-            if not isinstance(extracted, dict):
-                extracted = {}
-
-        except Exception as error:
-
-            print(
-                "Gemini extraction error:",
-                error
+            retrieval_future = executor.submit(
+                run_semantic_retrieval,
+                patient_text
             )
 
-            extracted = {}
+            gemini_result = (
+                gemini_future.result()
+            )
+
+            gemini_finished_time = (
+                time.perf_counter()
+                - ai_start
+            )
+
+            retrieved_rules = (
+                retrieval_future.result()
+            )
+
+            retrieval_finished_time = (
+                time.perf_counter()
+                - ai_start
+            )
+
+        ai_time = (
+            time.perf_counter()
+            - ai_start
+        )
 
         # ----------------------------------------------------
-        # Get Gemini follow-up questions
+        # Gemini result
         # ----------------------------------------------------
 
-        gemini_questions = normalize_follow_up_questions(
-            extracted.get(
-                "follow_up_questions",
-                []
+        extracted = gemini_result.get(
+            "data",
+            {}
+        )
+
+        gemini_status = gemini_result.get(
+            "status",
+            "unknown"
+        )
+
+        gemini_error = gemini_result.get(
+            "error"
+        )
+
+        # ----------------------------------------------------
+        # Gemini follow-up questions
+        # ----------------------------------------------------
+
+        gemini_questions = (
+            normalize_follow_up_questions(
+                extracted.get(
+                    "follow_up_questions",
+                    []
+                )
             )
         )
 
@@ -586,39 +777,59 @@ def analyze_patient():
         # Fallback questions
         # ----------------------------------------------------
 
-        fallback_questions = get_fallback_questions(
-            patient_text
+        fallback_questions = (
+            get_fallback_questions(
+                patient_text
+            )
         )
 
-        # Prefer Gemini questions only if they are usable.
-        # Otherwise use deterministic fallback questions.
+        # ----------------------------------------------------
+        # Choose follow-up questions
+        # ----------------------------------------------------
+
         if gemini_questions:
 
-            follow_up_questions = gemini_questions
+            follow_up_questions = (
+                gemini_questions
+            )
 
         else:
 
-            follow_up_questions = fallback_questions
+            follow_up_questions = (
+                fallback_questions
+            )
 
         # ----------------------------------------------------
-        # Remove questions already answered
+        # Remove already answered questions
         # ----------------------------------------------------
 
-        remaining_questions = filter_answered_questions(
-            follow_up_questions,
-            answers
+        remaining_questions = (
+            filter_answered_questions(
+                follow_up_questions,
+                answers
+            )
         )
 
         # ----------------------------------------------------
         # Deterministic triage
         # ----------------------------------------------------
 
+        triage_start = time.perf_counter()
+
         triage = evaluate_triage(
             patient_text,
             answers
         )
 
-        if not isinstance(triage, dict):
+        triage_time = (
+            time.perf_counter()
+            - triage_start
+        )
+
+        if not isinstance(
+            triage,
+            dict
+        ):
 
             triage = {
                 "rule_id": "UN-001",
@@ -633,7 +844,7 @@ def analyze_patient():
             }
 
         # ----------------------------------------------------
-        # Exact final rule
+        # Get final rule
         # ----------------------------------------------------
 
         selected_rule_id = triage.get(
@@ -646,90 +857,146 @@ def analyze_patient():
         )
 
         # ----------------------------------------------------
-        # Semantic retrieval
-        # ----------------------------------------------------
-
-        try:
-
-            retrieved_rules = retrieve_rules(
-                patient_text,
-                top_k=3
-            )
-
-        except Exception as error:
-
-            print(
-                "Retrieval error:",
-                error
-            )
-
-            retrieved_rules = []
-
-        # ----------------------------------------------------
         # Patient information
         # ----------------------------------------------------
 
         patient_information = {
-            "main_complaint": extracted.get(
-                "main_complaint",
-                ""
-            ),
 
-            "patient_reported": extracted.get(
-                "patient_reported",
+            "main_complaint":
                 extracted.get(
-                    "reported_symptoms",
-                    []
-                )
-            ),
+                    "main_complaint",
+                    ""
+                ),
 
-            "remaining_unknowns": [
-                item.get("question", "")
-                for item in remaining_questions
-            ]
+            "patient_reported":
+                extracted.get(
+                    "patient_reported",
+                    extracted.get(
+                        "reported_symptoms",
+                        []
+                    )
+                ),
+
+            "remaining_unknowns":
+                [
+                    item.get(
+                        "question",
+                        ""
+                    )
+                    for item in remaining_questions
+                ]
         }
 
-        # If Gemini did not provide a main complaint,
-        # use a safe simple fallback.
-        if not patient_information["main_complaint"]:
+        # ----------------------------------------------------
+        # Main complaint fallback
+        # ----------------------------------------------------
+
+        if not patient_information[
+            "main_complaint"
+        ]:
 
             text_lower = patient_text.lower()
 
-            if "chest pain" in text_lower:
-                patient_information["main_complaint"] = "chest pain"
-
-            elif "fever" in text_lower:
-                patient_information["main_complaint"] = "fever"
-
-            elif (
-                "abdominal pain" in text_lower
-                or "stomach pain" in text_lower
+            if symptom_present(
+                text_lower,
+                [
+                    "chest pain",
+                    "pain in my chest",
+                    "chest hurts",
+                    "chest discomfort"
+                ]
             ):
-                patient_information["main_complaint"] = (
-                    "abdominal pain"
-                )
 
-            elif (
-                "difficulty breathing" in text_lower
-                or "shortness of breath" in text_lower
-            ):
-                patient_information["main_complaint"] = (
-                    "breathing difficulty"
-                )
+                patient_information[
+                    "main_complaint"
+                ] = "chest pain"
 
-            elif (
-                "injury" in text_lower
-                or "injured" in text_lower
+            elif symptom_present(
+                text_lower,
+                [
+                    "fever",
+                    "high temperature"
+                ]
             ):
-                patient_information["main_complaint"] = "injury"
+
+                patient_information[
+                    "main_complaint"
+                ] = "fever"
+
+            elif symptom_present(
+                text_lower,
+                [
+                    "abdominal pain",
+                    "stomach pain",
+                    "pain in my abdomen"
+                ]
+            ):
+
+                patient_information[
+                    "main_complaint"
+                ] = "abdominal pain"
+
+            elif symptom_present(
+                text_lower,
+                [
+                    "difficulty breathing",
+                    "shortness of breath",
+                    "breathing problem",
+                    "cannot breathe",
+                    "can't breathe"
+                ]
+            ):
+
+                patient_information[
+                    "main_complaint"
+                ] = "breathing difficulty"
+
+            elif symptom_present(
+                text_lower,
+                [
+                    "injury",
+                    "injured",
+                    "accident",
+                    "wound"
+                ]
+            ):
+
+                patient_information[
+                    "main_complaint"
+                ] = "injury"
+
+            else:
+
+                patient_information[
+                    "main_complaint"
+                ] = "unknown / unclear complaint"
 
         # ----------------------------------------------------
-        # Response
+        # Performance
+        # ----------------------------------------------------
+
+        total_time = (
+            time.perf_counter()
+            - request_start
+        )
+
+        print(
+            f"[PERFORMANCE] "
+            f"Gemini={gemini_finished_time:.2f}s | "
+            f"Retrieval={retrieval_finished_time:.2f}s | "
+            f"AI+Retrieval={ai_time:.2f}s | "
+            f"Triage={triage_time:.4f}s | "
+            f"Total={total_time:.2f}s"
+        )
+
+        # ----------------------------------------------------
+        # Final response
         # ----------------------------------------------------
 
         response_data = {
 
-            "triage_result": triage,
+            "triage_result":
+                triage,
 
             "patient_information":
                 patient_information,
@@ -741,10 +1008,18 @@ def analyze_patient():
                 retrieved_rules,
 
             "follow_up_questions":
-                remaining_questions
+                remaining_questions,
+
+            "gemini_status":
+                gemini_status,
+
+            "gemini_message":
+                gemini_error
         }
 
-        return jsonify(response_data)
+        return jsonify(
+            response_data
+        )
 
     except Exception as error:
 
@@ -778,7 +1053,9 @@ def serve_index():
 # SERVE STATIC FILES
 # ============================================================
 
-@app.route("/<path:path>")
+@app.route(
+    "/<path:path>"
+)
 def serve_static(path):
 
     file_path = os.path.join(
@@ -786,7 +1063,9 @@ def serve_static(path):
         path
     )
 
-    if os.path.isfile(file_path):
+    if os.path.isfile(
+        file_path
+    ):
 
         return send_from_directory(
             app.static_folder,
@@ -806,10 +1085,21 @@ def serve_static(path):
 if __name__ == "__main__":
 
     print("=" * 60)
-    print("NexusTiq24 Healthcare Triage Assistant")
+
+    print(
+        "NexusTiq24 Healthcare Triage Assistant"
+    )
+
     print("=" * 60)
-    print("Server: http://localhost:8000")
-    print("Press CTRL+C to stop the server.")
+
+    print(
+        "Server: http://localhost:8000"
+    )
+
+    print(
+        "Press CTRL+C to stop the server."
+    )
+
     print("=" * 60)
 
     app.run(

@@ -1,7 +1,25 @@
 import os
 import json
+import time
 
 from google import genai
+
+
+# ==================================================
+# GEMINI CONFIGURATION
+# ==================================================
+
+MODEL_NAME = "gemini-3.6-flash"
+
+# Only one attempt because the current free-tier quota
+# is already limited.
+MAX_RETRIES = 1
+
+RETRY_DELAYS = [
+    1,
+    2,
+    4
+]
 
 
 # ==================================================
@@ -23,14 +41,12 @@ def get_client():
 
 
 # ==================================================
-# EXTRACT PATIENT INFORMATION
+# BUILD PROMPT
 # ==================================================
 
-def extract_patient_info(patient_text):
+def build_prompt(patient_text):
 
-    client = get_client()
-
-    prompt = f"""
+    return f"""
 You are a healthcare patient intake assistant.
 
 Your ONLY job is to organize information that the patient
@@ -102,6 +118,7 @@ For ABDOMINAL PAIN, relevant questions may include:
 - Are you having any other serious symptoms?
 
 For UNKNOWN OR UNCLEAR COMPLAINT:
+
 Ask a small number of broad questions that help identify
 the main complaint and possible urgent symptoms.
 
@@ -109,7 +126,7 @@ IMPORTANT:
 
 Only ask a question if its answer is actually missing.
 
-For example:
+Example:
 
 Patient:
 "I have fever since yesterday."
@@ -137,7 +154,7 @@ Do NOT ask:
 
 because the patient already answered NO.
 
-Patient description:
+PATIENT DESCRIPTION:
 
 {patient_text}
 
@@ -161,61 +178,45 @@ Do not convert a denied symptom into a reported symptom.
 Ask only relevant missing questions.
 """
 
-    # ==================================================
-    # CALL GEMINI
-    # ==================================================
 
-    response = client.models.generate_content(
+# ==================================================
+# CLEAN GEMINI RESPONSE
+# ==================================================
 
-        model="gemini-3.6-flash",
+def clean_response_text(text):
 
-        contents=prompt
+    if not text:
+        raise RuntimeError(
+            "Gemini returned an empty response"
+        )
 
-    )
+    text = text.strip()
 
-    # ==================================================
-    # GET RESPONSE TEXT
-    # ==================================================
-
-    text = response.text.strip()
-
-    # ==================================================
-    # REMOVE MARKDOWN CODE BLOCK IF PRESENT
-    # ==================================================
-
+    # Remove markdown JSON code fences if Gemini adds them.
     if text.startswith("```"):
 
         text = text.replace(
             "```json",
-            ""
+            "",
+            1
         )
 
         text = text.replace(
             "```",
-            ""
+            "",
+            1
         )
 
         text = text.strip()
 
-    # ==================================================
-    # PARSE JSON
-    # ==================================================
+    return text
 
-    try:
 
-        patient_info = json.loads(
-            text
-        )
+# ==================================================
+# VALIDATE RESPONSE
+# ==================================================
 
-    except json.JSONDecodeError as error:
-
-        raise RuntimeError(
-            f"Gemini returned invalid JSON: {error}"
-        )
-
-    # ==================================================
-    # SAFETY CHECK
-    # ==================================================
+def validate_patient_info(patient_info):
 
     if not isinstance(
         patient_info,
@@ -226,9 +227,7 @@ Ask only relevant missing questions.
             "Gemini response is not a JSON object"
         )
 
-    # ==================================================
-    # ENSURE REQUIRED FIELDS
-    # ==================================================
+    # Required fields
 
     patient_info.setdefault(
         "main_complaint",
@@ -250,9 +249,15 @@ Ask only relevant missing questions.
         []
     )
 
-    # ==================================================
-    # TYPE SAFETY
-    # ==================================================
+    # Type safety
+
+    if not isinstance(
+        patient_info["main_complaint"],
+        str
+    ):
+
+        patient_info["main_complaint"] = ""
+
 
     if not isinstance(
         patient_info["reported_symptoms"],
@@ -261,12 +266,14 @@ Ask only relevant missing questions.
 
         patient_info["reported_symptoms"] = []
 
+
     if not isinstance(
         patient_info["missing_information"],
         list
     ):
 
         patient_info["missing_information"] = []
+
 
     if not isinstance(
         patient_info["follow_up_questions"],
@@ -275,8 +282,176 @@ Ask only relevant missing questions.
 
         patient_info["follow_up_questions"] = []
 
-    # ==================================================
-    # RETURN
-    # ==================================================
 
     return patient_info
+
+
+# ==================================================
+# EXTRACT PATIENT INFORMATION
+# ==================================================
+
+def extract_patient_info(patient_text):
+
+    client = get_client()
+
+    prompt = build_prompt(
+        patient_text
+    )
+
+    last_error = None
+
+    # ==================================================
+    # GEMINI REQUEST
+    # ==================================================
+
+    for attempt in range(
+        MAX_RETRIES
+    ):
+
+        start_time = time.perf_counter()
+
+        try:
+
+            print(
+                f"[GEMINI] Attempt "
+                f"{attempt + 1}/{MAX_RETRIES}"
+            )
+
+            response = client.models.generate_content(
+
+                model=MODEL_NAME,
+
+                contents=prompt
+
+            )
+
+            elapsed = (
+                time.perf_counter()
+                - start_time
+            )
+
+            print(
+                f"[GEMINI] Response received "
+                f"in {elapsed:.2f}s"
+            )
+
+            # ==================================================
+            # GET RESPONSE TEXT
+            # ==================================================
+
+            text = response.text
+
+            text = clean_response_text(
+                text
+            )
+
+            # ==================================================
+            # PARSE JSON
+            # ==================================================
+
+            try:
+
+                patient_info = json.loads(
+                    text
+                )
+
+            except json.JSONDecodeError as error:
+
+                raise RuntimeError(
+                    "Gemini returned invalid JSON: "
+                    f"{error}"
+                )
+
+            # ==================================================
+            # SAFETY VALIDATION
+            # ==================================================
+
+            patient_info = validate_patient_info(
+                patient_info
+            )
+
+            return patient_info
+
+        except Exception as error:
+
+            last_error = error
+
+            error_text = str(
+                error
+            ).lower()
+
+            print(
+                f"[GEMINI] Attempt "
+                f"{attempt + 1} failed: "
+                f"{error}"
+            )
+
+            # ==================================================
+            # QUOTA ERROR
+            # ==================================================
+
+            if (
+                "429" in error_text
+                or "resource exhausted" in error_text
+                or "quota" in error_text
+            ):
+
+                print(
+                    "[GEMINI] API quota exceeded."
+                )
+
+                raise RuntimeError(
+                    "Gemini API quota exceeded. "
+                    "Please try again after the quota resets "
+                    "or use an available Gemini API plan."
+                )
+
+            # ==================================================
+            # TEMPORARY SERVICE ERROR
+            # ==================================================
+
+            retryable = any(
+                keyword in error_text
+                for keyword in [
+                    "503",
+                    "unavailable",
+                    "service unavailable",
+                    "timeout",
+                    "temporarily"
+                ]
+            )
+
+            if not retryable:
+
+                raise
+
+            # ==================================================
+            # LAST ATTEMPT
+            # ==================================================
+
+            if attempt == MAX_RETRIES - 1:
+
+                break
+
+            delay = RETRY_DELAYS[
+                attempt
+            ]
+
+            print(
+                f"[GEMINI] Retrying in "
+                f"{delay}s..."
+            )
+
+            time.sleep(
+                delay
+            )
+
+    # ==================================================
+    # ALL RETRIES FAILED
+    # ==================================================
+
+    raise RuntimeError(
+        "Gemini temporarily unavailable "
+        f"after {MAX_RETRIES} attempts: "
+        f"{last_error}"
+    )
