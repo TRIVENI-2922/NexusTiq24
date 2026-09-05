@@ -439,22 +439,162 @@ def normalize_follow_up_questions(questions):
 
 
 # ============================================================
-# FILTER ALREADY ANSWERED QUESTIONS
+# FILTER ALREADY ANSWERED / KNOWN QUESTIONS
 # ============================================================
 
 def filter_answered_questions(
     questions,
-    answers
+    answers,
+    patient_text=""
 ):
     """
-    Remove questions that were already answered.
+    Remove questions that are already known from:
+
+    1. Patient's original description
+    2. Previous follow-up answers
+
+    Example:
+
+        Patient:
+        "I have chest pain and difficulty breathing."
+
+    The question:
+        "Are you having difficulty breathing?"
+
+    will be removed because the patient already
+    provided that information.
     """
 
     if not questions:
         return []
 
+    patient_text = patient_text.lower()
+
+    # --------------------------------------------------------
+    # Questions already answered in original patient text
+    # --------------------------------------------------------
+
+    remaining = []
+
+    for question in questions:
+
+        question_text = str(
+            question.get(
+                "question",
+                ""
+            )
+        ).strip()
+
+        question_lower = question_text.lower()
+
+        already_known = False
+
+        # ----------------------------------------------------
+        # Breathing difficulty
+        # ----------------------------------------------------
+
+        if (
+            "difficulty breathing" in question_lower
+            or "shortness of breath" in question_lower
+            or "breathing problem" in question_lower
+        ):
+
+            already_known = symptom_present(
+                patient_text,
+                [
+                    "difficulty breathing",
+                    "shortness of breath",
+                    "breathing problem",
+                    "cannot breathe",
+                    "can't breathe"
+                ]
+            )
+
+        # ----------------------------------------------------
+        # Chest pain
+        # ----------------------------------------------------
+
+        elif (
+            "chest pain" in question_lower
+            or "pain in your chest" in question_lower
+        ):
+
+            already_known = symptom_present(
+                patient_text,
+                [
+                    "chest pain",
+                    "pain in my chest",
+                    "chest hurts",
+                    "chest discomfort"
+                ]
+            )
+
+        # ----------------------------------------------------
+        # Fever
+        # ----------------------------------------------------
+
+        elif "fever" in question_lower:
+
+            already_known = symptom_present(
+                patient_text,
+                [
+                    "fever",
+                    "high temperature"
+                ]
+            )
+
+        # ----------------------------------------------------
+        # Abdominal pain
+        # ----------------------------------------------------
+
+        elif (
+            "abdominal pain" in question_lower
+            or "stomach pain" in question_lower
+        ):
+
+            already_known = symptom_present(
+                patient_text,
+                [
+                    "abdominal pain",
+                    "stomach pain",
+                    "pain in my abdomen"
+                ]
+            )
+
+        # ----------------------------------------------------
+        # Injury
+        # ----------------------------------------------------
+
+        elif (
+            "injury" in question_lower
+            or "injured" in question_lower
+        ):
+
+            already_known = symptom_present(
+                patient_text,
+                [
+                    "injury",
+                    "injured",
+                    "accident",
+                    "wound"
+                ]
+            )
+
+        # ----------------------------------------------------
+        # If already known, skip question
+        # ----------------------------------------------------
+
+        if already_known:
+            continue
+
+        remaining.append(question)
+
+    # --------------------------------------------------------
+    # Remove questions already answered through UI
+    # --------------------------------------------------------
+
     if not answers:
-        return questions
+        return remaining
 
     answered_questions = set()
 
@@ -467,22 +607,27 @@ def filter_answered_questions(
 
         if answer:
             answered_questions.add(
-                question.strip().lower()
+                str(question).strip().lower()
             )
 
-    remaining = []
+    final_questions = []
 
-    for question in questions:
+    for question in remaining:
 
-        question_text = question.get(
-            "question",
-            ""
+        question_text = str(
+            question.get(
+                "question",
+                ""
+            )
         ).strip().lower()
 
         if question_text not in answered_questions:
-            remaining.append(question)
 
-    return remaining
+            final_questions.append(
+                question
+            )
+
+    return final_questions
 
 
 # ============================================================
@@ -800,13 +945,14 @@ def analyze_patient():
             )
 
         # ----------------------------------------------------
-        # Remove already answered questions
+        # Remove already known / answered questions
         # ----------------------------------------------------
 
         remaining_questions = (
             filter_answered_questions(
                 follow_up_questions,
-                answers
+                answers,
+                patient_text
             )
         )
 
@@ -860,6 +1006,32 @@ def analyze_patient():
         # Patient information
         # ----------------------------------------------------
 
+        patient_reported = extracted.get(
+            "patient_reported",
+            extracted.get(
+                "reported_symptoms",
+                []
+            )
+        )
+
+        # If Gemini does not return reported symptoms,
+        # preserve the original patient description.
+
+        if not patient_reported:
+
+            patient_reported = [
+                patient_text
+            ]
+
+        elif isinstance(
+            patient_reported,
+            str
+        ):
+
+            patient_reported = [
+                patient_reported
+            ]
+
         patient_information = {
 
             "main_complaint":
@@ -869,13 +1041,7 @@ def analyze_patient():
                 ),
 
             "patient_reported":
-                extracted.get(
-                    "patient_reported",
-                    extracted.get(
-                        "reported_symptoms",
-                        []
-                    )
-                ),
+                patient_reported,
 
             "remaining_unknowns":
                 [
