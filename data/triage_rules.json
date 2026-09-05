@@ -1,0 +1,81 @@
+[
+  {
+    "rule_id": "CP-001",
+    "category": "chest_pain",
+    "condition": "Chest pain with severe symptoms or danger signs",
+    "urgency": "EMERGENCY",
+    "department": "Emergency Department",
+    "criteria": [
+      "severe chest pain",
+      "difficulty breathing",
+      "fainting",
+      "cold sweat",
+      "pain spreading to arm or jaw"
+    ],
+    "action": "Immediate human clinical assessment",
+    "escalate": true
+  },
+  {
+    "rule_id": "BD-001",
+    "category": "breathing_difficulty",
+    "condition": "Breathing difficulty with severe respiratory symptoms",
+    "urgency": "EMERGENCY",
+    "department": "Emergency Department",
+    "criteria": [
+      "severe difficulty breathing",
+      "cannot speak normally",
+      "blue lips",
+      "fainting"
+    ],
+    "action": "Immediate human clinical assessment",
+    "escalate": true
+  },
+  {
+    "rule_id": "IN-001",
+    "category": "injury",
+    "condition": "Major injury with uncontrolled bleeding or loss of consciousness",
+    "urgency": "EMERGENCY",
+    "department": "Emergency Department",
+    "criteria": [
+      "uncontrolled bleeding",
+      "loss of consciousness",
+      "severe injury"
+    ],
+    "action": "Immediate human clinical assessment",
+    "escalate": true
+  },
+  {
+    "rule_id": "FV-001",
+    "category": "fever",
+    "condition": "Fever without identified emergency danger signs",
+    "urgency": "URGENT",
+    "department": "General Medicine",
+    "criteria": [
+      "fever"
+    ],
+    "action": "Clinical assessment recommended",
+    "escalate": false
+  },
+  {
+    "rule_id": "AB-001",
+    "category": "abdominal_pain",
+    "condition": "Abdominal pain without identified emergency danger signs",
+    "urgency": "URGENT",
+    "department": "General Medicine",
+    "criteria": [
+      "abdominal pain"
+    ],
+    "action": "Clinical assessment recommended",
+    "escalate": false
+  },
+  {
+    "rule_id": "UN-001",
+    "category": "unknown",
+    "condition": "Information is insufficient to safely apply a triage rule",
+    "urgency": "HUMAN_REVIEW",
+    "department": "Human Clinical Triage",
+    "criteria": [],
+    "action": "Escalate to a human rather than guessing",
+    "escalate": true
+  }
+]

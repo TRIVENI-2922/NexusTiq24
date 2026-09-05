@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        NexusTiq24 - Patient Intake Triage Assistant
+    </title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+
+    <!-- =====================================================
+         HEADER
+    ====================================================== -->
+
+    <header class="header">
+
+        <div class="header-content">
+
+            <h1>
+                NexusTiq24
+            </h1>
+
+            <p>
+                Healthcare Patient Intake Triage Assistant
+            </p>
+
+        </div>
+
+    </header>
+
+
+    <!-- =====================================================
+         MAIN CONTAINER
+    ====================================================== -->
+
+    <main class="container">
+
+
+        <!-- =================================================
+             PATIENT INPUT SECTION
+        ================================================== -->
+
+        <section class="card">
+
+            <h2>
+                Patient Description
+            </h2>
+
+            <p class="description">
+                Describe the patient's symptoms in your own words.
+            </p>
+
+            <textarea
+                id="patientText"
+                placeholder="Example: I have fever since yesterday and I feel weak."
+                rows="7"
+            ></textarea>
+
+            <button
+                id="analyzeBtn"
+                class="primary-btn"
+            >
+                Analyze Patient
+            </button>
+
+        </section>
+
+
+        <!-- =================================================
+             LOADING
+        ================================================== -->
+
+        <section
+            id="loading"
+            class="card hidden"
+        >
+
+            <div class="loading-content">
+
+                <div class="spinner"></div>
+
+                <p>
+                    Analyzing patient information...
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             ERROR
+        ================================================== -->
+
+        <section
+            id="errorSection"
+            class="card error-card hidden"
+        >
+
+            <h2>
+                Error
+            </h2>
+
+            <p id="errorMessage"></p>
+
+        </section>
+
+
+        <!-- =================================================
+             FOLLOW-UP QUESTIONS
+        ================================================== -->
+
+        <section
+            id="followUpSection"
+            class="card hidden"
+        >
+
+            <h2>
+                Follow-up Questions
+            </h2>
+
+            <p class="description">
+                Please answer the following questions to improve
+                the triage assessment.
+            </p>
+
+            <div id="questionsContainer"></div>
+
+            <button
+                id="submitAnswersBtn"
+                class="primary-btn"
+            >
+                Submit Answers
+            </button>
+
+        </section>
+
+
+        <!-- =================================================
+             TRIAGE RESULT
+        ================================================== -->
+
+        <section
+            id="resultSection"
+            class="card hidden"
+        >
+
+            <h2>
+                Triage Result
+            </h2>
+
+
+            <!-- ---------------------------------------------
+                 URGENCY
+            ---------------------------------------------- -->
+
+            <div
+                id="urgencyBox"
+                class="result-box"
+            >
+
+                <span class="result-label">
+                    Recommended Urgency
+                </span>
+
+                <strong
+                    id="urgency"
+                >
+                    -
+                </strong>
+
+            </div>
+
+
+            <!-- ---------------------------------------------
+                 DEPARTMENT
+            ---------------------------------------------- -->
+
+            <div class="result-item">
+
+                <span class="result-label">
+                    Recommended Department
+                </span>
+
+                <span
+                    id="department"
+                >
+                    -
+                </span>
+
+            </div>
+
+
+            <!-- ---------------------------------------------
+                 RULE
+            ---------------------------------------------- -->
+
+            <div class="result-item">
+
+                <span class="result-label">
+                    Applied Rule
+                </span>
+
+                <span
+                    id="ruleId"
+                >
+                    -
+                </span>
+
+            </div>
+
+
+            <div class="result-item">
+
+                <span class="result-label">
+                    Reasoning
+                </span>
+
+                <p
+                    id="reasoning"
+                >
+                    -
+                </p>
+
+            </div>
+
+
+            <!-- ---------------------------------------------
+                 HUMAN REVIEW
+            ---------------------------------------------- -->
+
+            <div
+                id="humanReviewBox"
+                class="review-box"
+            >
+
+                <span class="result-label">
+                    Human Clinical Review
+                </span>
+
+                <strong
+                    id="humanReview"
+                >
+                    -
+                </strong>
+
+            </div>
+
+
+        </section>
+
+
+        <!-- =================================================
+             PATIENT INFORMATION
+        ================================================== -->
+
+        <section
+            id="patientInfoSection"
+            class="card hidden"
+        >
+
+            <h2>
+                Patient Information
+            </h2>
+
+
+            <div class="result-item">
+
+                <span class="result-label">
+                    Main Complaint
+                </span>
+
+                <span
+                    id="mainComplaint"
+                >
+                    -
+                </span>
+
+            </div>
+
+
+            <div class="result-item">
+
+                <span class="result-label">
+                    Patient Reported
+                </span>
+
+                <ul
+                    id="reportedSymptoms"
+                ></ul>
+
+            </div>
+
+
+            <div class="result-item">
+
+                <span class="result-label">
+                    Remaining Unknowns
+                </span>
+
+                <ul
+                    id="remainingUnknowns"
+                ></ul>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             APPLIED RULE DETAILS
+        ================================================== -->
+
+        <section
+            id="ruleSection"
+            class="card hidden"
+        >
+
+            <h2>
+                Rule Details
+            </h2>
+
+            <div class="rule-details">
+
+                <p>
+
+                    <strong>
+                        Rule ID:
+                    </strong>
+
+                    <span
+                        id="finalRuleId"
+                    >
+                        -
+                    </span>
+
+                </p>
+
+
+                <p>
+
+                    <strong>
+                        Condition:
+                    </strong>
+
+                    <span
+                        id="finalRuleCondition"
+                    >
+                        -
+                    </span>
+
+                </p>
+
+
+                <p>
+
+                    <strong>
+                        Action:
+                    </strong>
+
+                    <span
+                        id="finalRuleAction"
+                    >
+                        -
+                    </span>
+
+                </p>
+
+
+                <p>
+
+                    <strong>
+                        Escalation:
+                    </strong>
+
+                    <span
+                        id="finalRuleEscalate"
+                    >
+                        -
+                    </span>
+
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- =================================================
+             RETRIEVED RULES
+        ================================================== -->
+
+        <section
+            id="retrievalSection"
+            class="card hidden"
+        >
+
+            <h2>
+                Retrieved Supporting Rules
+            </h2>
+
+            <div
+                id="retrievedRules"
+            ></div>
+
+        </section>
+
+
+        <!-- =================================================
+             SAFETY NOTE
+        ================================================== -->
+
+        <section class="safety-note">
+
+            <h3>
+                Important Safety Notice
+            </h3>
+
+            <p>
+                This tool does not provide a medical diagnosis.
+                It applies deterministic triage rules to the
+                information provided.
+            </p>
+
+            <p>
+                If information is insufficient or a high-risk
+                situation is identified, human clinical review
+                is recommended.
+            </p>
+
+        </section>
+
+
+    </main>
+
+
+    <!-- =====================================================
+         FOOTER
+    ====================================================== -->
+
+    <footer class="footer">
+
+        <p>
+            NexusTiq24 Healthcare Triage Assistant
+        </p>
+
+        <p>
+            Hackathon Prototype
+        </p>
+
+    </footer>
+
+
+    <!-- JavaScript -->
+    <script src="/app.js"></script>
+
+</body>
+</html>
